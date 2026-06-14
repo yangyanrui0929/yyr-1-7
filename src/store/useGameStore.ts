@@ -265,13 +265,23 @@ export const useGameStore = create<GameState & GameActions>()(
 
         const newProgress = Math.min(100, state.storyProgress + 4)
 
+        let patrolAccumulator = state.patrolValue
+        if (!state.currentRiskEvent && !state.currentInterruption && state.currentBranch) {
+          const hasOfficial = state.customers.some((c) => c.seatId !== null && c.type === '官员')
+          const multiplier = hasOfficial ? 2 : 1
+          const baseRiskPerTick = (state.currentBranch.riskValue / 25) * multiplier
+          patrolAccumulator = Math.max(0, Math.min(100, patrolAccumulator + baseRiskPerTick))
+        }
+
         if (!state.currentRiskEvent && !state.currentInterruption && state.currentStory && state.currentBranch) {
-          const riskTriggerChance = 0.12 + (state.currentBranch.riskValue / 100) * 0.2
+          const riskTriggerChance = 0.12 + (state.currentBranch.riskValue / 100) * 0.25
           if (state.storyProgress > 15 && state.storyProgress < 95 && Math.random() < riskTriggerChance) {
             const hasOfficial = state.customers.some((c) => c.seatId !== null && c.type === '官员')
             const riskEvent = generateRiskEvent(state.currentStory, state.currentBranch, hasOfficial)
             if (riskEvent) {
-              set({ currentRiskEvent: riskEvent, storyProgress: newProgress })
+              const initialPatrolGain = riskEvent.basePatrolGain * (hasOfficial ? 2 : 1)
+              patrolAccumulator = Math.max(0, Math.min(100, patrolAccumulator + initialPatrolGain))
+              set({ currentRiskEvent: riskEvent, storyProgress: newProgress, patrolValue: patrolAccumulator })
               return
             }
           }
@@ -284,7 +294,7 @@ export const useGameStore = create<GameState & GameActions>()(
             const matching = state.interruptions.filter((i) => i.customerType === c.type)
             const pool = matching.length > 0 ? matching : state.interruptions
             const ev = pool[Math.floor(Math.random() * pool.length)]
-            set({ currentInterruption: ev, storyProgress: newProgress })
+            set({ currentInterruption: ev, storyProgress: newProgress, patrolValue: patrolAccumulator })
             return
           }
         }
@@ -300,10 +310,10 @@ export const useGameStore = create<GameState & GameActions>()(
         })
 
         if (newProgress >= 100) {
-          set({ performanceActive: false, storyProgress: 100, customers })
+          set({ performanceActive: false, storyProgress: 100, customers, patrolValue: patrolAccumulator })
           setTimeout(() => get().doSettlement(), 600)
         } else {
-          set({ storyProgress: newProgress, customers })
+          set({ storyProgress: newProgress, customers, patrolValue: patrolAccumulator })
         }
       },
 
@@ -355,9 +365,7 @@ export const useGameStore = create<GameState & GameActions>()(
 
         if (state.gold < option.goldCost) return
 
-        const multiplier = state.currentRiskEvent.hasOfficialPresent ? 2 : 1
-        const patrolDelta = option.patrolDelta * (option.patrolDelta > 0 ? multiplier : 1)
-        const newPatrol = Math.max(0, Math.min(100, state.patrolValue + patrolDelta))
+        const newPatrol = Math.max(0, Math.min(100, state.patrolValue + option.patrolDelta))
 
         const customers = state.customers.map((c) => ({
           ...c,
@@ -404,14 +412,11 @@ export const useGameStore = create<GameState & GameActions>()(
 
         let endingPatrol = state.patrolValue
         let isBanned = false
-        let seizedGold = 0
 
         if (endingPatrol >= 80) {
           isBanned = true
-          seizedGold = Math.min(state.gold, Math.floor(state.gold * 0.4))
           endingPatrol = Math.max(0, endingPatrol - 40)
         } else if (endingPatrol >= 60) {
-          seizedGold = Math.min(state.gold, Math.floor(state.gold * 0.15))
           endingPatrol = Math.max(0, endingPatrol - 20)
         }
 
@@ -429,8 +434,17 @@ export const useGameStore = create<GameState & GameActions>()(
           state.snacks,
           endingPatrol,
           isBanned,
-          seizedGold
+          0
         )
+
+        const totalGoldBeforeSeize = state.gold + result.totalEarnings
+        let seizedGold = 0
+        if (state.patrolValue >= 80) {
+          seizedGold = Math.min(totalGoldBeforeSeize, Math.floor(totalGoldBeforeSeize * 0.4))
+        } else if (state.patrolValue >= 60) {
+          seizedGold = Math.min(totalGoldBeforeSeize, Math.floor(totalGoldBeforeSeize * 0.15))
+        }
+        result.seizedGold = seizedGold
 
         const storyRecord: StoryRecord = {
           day: state.day,
@@ -466,7 +480,7 @@ export const useGameStore = create<GameState & GameActions>()(
         set((s) => ({
           isSettlement: true,
           lastSettlement: result,
-          gold: Math.max(0, s.gold + result.totalEarnings - seizedGold),
+          gold: Math.max(0, totalGoldBeforeSeize - seizedGold),
           reputation: newRep,
           storyHistory: [...s.storyHistory, storyRecord],
           lastStoryDay: { ...s.lastStoryDay, [state.currentStory!.id]: state.day },
