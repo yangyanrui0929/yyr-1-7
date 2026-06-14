@@ -94,9 +94,35 @@ export default function Settlement() {
           <Row label="打赏收入" value={r.tips} positive />
           <Row label="茶点售卖利润" value={r.snackRevenue} positive />
           {r.badReviewPenalty > 0 && <Row label="差评索赔" value={r.badReviewPenalty} />}
+          {r.seizedGold > 0 && (
+            <Row
+              label={r.isBanned ? '故事遭禁·扣押账银' : '巡查罚没'}
+              value={r.seizedGold}
+            />
+          )}
         </div>
 
         <Row label="今夜合计收入" value={r.totalEarnings} positive showIcon highlight />
+
+        {r.isBanned && (
+          <div className="mt-4 p-4 rounded-xl bg-cinnabar/10 border-2 border-cinnabar/40 animate-shake">
+            <div className="flex items-center gap-2 text-cinnabar font-brush text-lg mb-1">
+              ⚠️ 故事被查禁！
+            </div>
+            <div className="text-sm text-ink">
+              本篇故事已被官府列入禁书，今后不可再讲。巡查之风日紧，今后说书还需谨慎小心。
+            </div>
+          </div>
+        )}
+
+        {r.patrolValue > 0 && !r.isBanned && (
+          <div className={`mt-4 p-3 rounded-xl border ${r.patrolValue >= 60 ? 'bg-gold/10 border-gold/40' : 'bg-tea/10 border-tea/30'}`}>
+            <div className={`text-sm ${r.patrolValue >= 60 ? 'text-gold' : 'text-tea'}`}>
+              当前巡查值：<span className="font-semibold">{r.patrolValue}%</span>
+              {r.patrolValue >= 60 && ' — 已被官府留意'}
+            </div>
+          </div>
+        )}
 
         <div className="mt-5 flex items-center justify-center gap-3 py-3 rounded-xl bg-sandal/10 border-2 border-sandal/30">
           <Trophy className={`w-6 h-6 ${repColor}`} />

@@ -26,7 +26,10 @@ export function calcSettlement(
   lastStoryDay: Record<string, number>,
   storyScores: Record<string, number[]>,
   reputation: number,
-  snacks: Snack[]
+  snacks: Snack[],
+  patrolValue: number = 0,
+  isBanned: boolean = false,
+  seizedGold: number = 0
 ): SettlementResult {
   const audience = customers.filter((c) => c.seatId !== null)
   const audienceCount = audience.length
@@ -109,5 +112,8 @@ export function calcSettlement(
     totalEarnings,
     reputationDelta,
     avgSatisfaction,
+    patrolValue,
+    isBanned,
+    seizedGold,
   }
 }

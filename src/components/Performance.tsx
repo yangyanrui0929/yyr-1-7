@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
-import { Users } from 'lucide-react'
+import { Users, AlertTriangle, Shield } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import Interruption from './Interruption'
+import RiskEventModal from './RiskEvent'
 
 function getMood(sat: number): string {
   if (sat >= 80) return '😍'
@@ -19,8 +20,11 @@ export default function Performance() {
     storyProgress,
     performanceActive,
     currentInterruption,
+    currentRiskEvent,
+    patrolValue,
     tickPerformance,
     handleInterruption,
+    handleRiskEvent,
   } = useGameStore()
 
   useEffect(() => {
@@ -51,6 +55,7 @@ export default function Performance() {
         <Users className="w-6 h-6" /> 开讲现场
       </h2>
 
+      {currentRiskEvent && <RiskEventModal event={currentRiskEvent} onChoose={handleRiskEvent} />}
       {currentInterruption && <Interruption event={currentInterruption} onChoose={handleInterruption} />}
 
       <div className="relative">
@@ -76,6 +81,50 @@ export default function Performance() {
             />
           </div>
         </div>
+
+        {performanceActive && (
+          <div className="mb-4 p-3 rounded-xl bg-paper-dark/30 border border-sandal/20">
+            <div className="flex justify-between items-center text-sm mb-2">
+              <div className="flex items-center gap-2">
+                {patrolValue >= 60 ? (
+                  <AlertTriangle className="w-4 h-4 text-cinnabar animate-pulse" />
+                ) : (
+                  <Shield className="w-4 h-4 text-tea" />
+                )}
+                <span className="font-song">
+                  {patrolValue >= 80 ? '巡查警报' : patrolValue >= 50 ? '巡查警戒' : '巡查正常'}
+                </span>
+              </div>
+              <span className={`font-bold ${patrolValue >= 80 ? 'text-cinnabar' : patrolValue >= 50 ? 'text-gold' : 'text-tea'}`}>
+                {patrolValue}%
+              </span>
+            </div>
+            <div className="h-2.5 bg-paper-dark rounded-full overflow-hidden border border-sandal/30">
+              <div
+                className={`h-full bg-gradient-to-r ${
+                  patrolValue >= 80
+                    ? 'from-cinnabar via-red-500 to-red-400'
+                    : patrolValue >= 50
+                    ? 'from-gold via-yellow-500 to-yellow-400'
+                    : 'from-tea via-green-500 to-green-400'
+                } transition-all duration-500`}
+                style={{ width: `${patrolValue}%` }}
+              />
+            </div>
+            {currentBranch && currentBranch.riskTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {currentBranch.riskTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-cinnabar/10 text-cinnabar border border-cinnabar/20"
+                  >
+                    ⚠️ {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mb-4 flex justify-between items-center">
           <div className="text-sm text-ink-light">

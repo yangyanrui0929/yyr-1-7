@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Scroll, Flame, Heart, Users, UserCheck, Sparkles } from 'lucide-react'
+import { Scroll, Flame, Heart, Users, UserCheck, Sparkles, AlertTriangle } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import type { Story, StoryBranch } from '@/types'
 import { calcStoryHeat } from '@/utils/storyHeat'
@@ -23,10 +23,6 @@ export default function StoryPicker() {
 
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null)
   const seated = customers.filter((c) => c.seatId !== null)
-
-  const selectedStory = selectedStoryId
-    ? availableStories.find((s) => s.id === selectedStoryId)
-    : null
 
   const tasteMatchForBranch = (branch: StoryBranch) => {
     return calcAvgTasteMatch(seated, branch)
@@ -61,6 +57,8 @@ export default function StoryPicker() {
                 const expect = calcSerialExpect(story.id, day, lastStoryDay, storyScores)
                 const tasteMatch = tasteMatchForStory(story)
                 const isSelected = selectedStoryId === story.id
+                const maxRisk = Math.max(...story.branches.map((b) => b.riskValue), 0)
+                const allRiskTags = Array.from(new Set(story.branches.flatMap((b) => b.riskTags)))
 
                 return (
                   <div
@@ -79,13 +77,26 @@ export default function StoryPicker() {
 
                     <div className="text-xs text-ink-light mb-2 line-clamp-2">{story.summary}</div>
 
-                    <div className="flex flex-wrap gap-1 mb-3">
+                    <div className="flex flex-wrap gap-1 mb-2">
                       {story.tags.map((t) => (
                         <span key={t} className="tag-chip">#{t}</span>
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 text-xs mb-3">
+                    {allRiskTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {allRiskTags.map((t) => (
+                          <span
+                            key={t}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-cinnabar/10 text-cinnabar border border-cinnabar/20"
+                          >
+                            ⚠️ {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-4 gap-1 text-xs mb-3">
                       <div className="text-center">
                         <div className="flex items-center justify-center gap-1 text-cinnabar">
                           <Flame className="w-3 h-3" />
@@ -105,7 +116,32 @@ export default function StoryPicker() {
                           <Sparkles className="w-3 h-3" />
                         </div>
                         <div className="font-semibold text-tea">{tasteMatch.value}</div>
-                        <div className="text-[10px] text-ink-light">口味匹配</div>
+                        <div className="text-[10px] text-ink-light">匹配</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <AlertTriangle
+                            className={`w-3 h-3 ${
+                              maxRisk >= 20
+                                ? 'text-cinnabar'
+                                : maxRisk >= 10
+                                ? 'text-gold'
+                                : 'text-ink-light'
+                            }`}
+                          />
+                        </div>
+                        <div
+                          className={`font-semibold ${
+                            maxRisk >= 20
+                              ? 'text-cinnabar'
+                              : maxRisk >= 10
+                              ? 'text-gold'
+                              : 'text-ink-light'
+                          }`}
+                        >
+                          {maxRisk}
+                        </div>
+                        <div className="text-[10px] text-ink-light">风险</div>
                       </div>
                     </div>
 
@@ -126,14 +162,37 @@ export default function StoryPicker() {
                               >
                                 <div className="font-medium flex justify-between items-center">
                                   <span>{b.title}</span>
-                                  <span className="text-xs text-teal font-semibold">
-                                    匹配 {tm.value}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {b.riskValue > 0 && (
+                                      <span
+                                        className={`text-[10px] font-semibold flex items-center gap-0.5 ${
+                                          b.riskValue >= 20
+                                            ? 'text-cinnabar'
+                                            : b.riskValue >= 10
+                                            ? 'text-gold'
+                                            : 'text-ink-light'
+                                        }`}
+                                      >
+                                        ⚠️ {b.riskValue}
+                                      </span>
+                                    )}
+                                    <span className="text-xs text-teal font-semibold">
+                                      匹配 {tm.value}
+                                    </span>
+                                  </div>
                                 </div>
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {b.tags.map((t) => (
                                     <span key={t} className="text-[10px] text-tea">
                                       #{t}
+                                    </span>
+                                  ))}
+                                  {b.riskTags.map((t) => (
+                                    <span
+                                      key={t}
+                                      className="text-[10px] px-1 py-0.5 rounded bg-cinnabar/10 text-cinnabar border border-cinnabar/20"
+                                    >
+                                      ⚠️ {t}
                                     </span>
                                   ))}
                                 </div>
@@ -220,7 +279,40 @@ export default function StoryPicker() {
             #{t}
           </span>
         ))}
+        {currentBranch?.riskTags.map((t) => (
+          <span
+            key={t}
+            className="tag-chip bg-cinnabar/10 text-cinnabar border-cinnabar/30"
+          >
+            ⚠️ {t}
+          </span>
+        ))}
       </div>
+
+      {currentBranch && currentBranch.riskValue > 0 && (
+        <div
+          className={`mt-3 p-3 rounded-lg border ${
+            currentBranch.riskValue >= 20
+              ? 'bg-cinnabar/10 border-cinnabar/30'
+              : 'bg-gold/10 border-gold/30'
+          }`}
+        >
+          <div
+            className={`text-sm font-medium flex items-center gap-2 ${
+              currentBranch.riskValue >= 20 ? 'text-cinnabar' : 'text-gold'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+            巡查风险：{currentBranch.riskValue}
+            {customers.some((c) => c.seatId !== null && c.type === '官员') && (
+              <span className="text-cinnabar font-bold">×2（有官员在场！）</span>
+            )}
+          </div>
+          <div className="text-xs text-ink-light mt-1">
+            讲述此类内容会累积巡查值，过高会导致故事被禁、账银被扣押。
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 flex items-center gap-2">
         <UserCheck className="w-4 h-4 text-tea" />

@@ -1,4 +1,4 @@
-import { Sun, Moon, Coins, Trophy, Calendar, Cloud, CloudRain, CloudSnow } from 'lucide-react'
+import { Sun, Moon, Coins, Trophy, Calendar, Cloud, CloudRain, CloudSnow, AlertTriangle, Shield } from 'lucide-react'
 import { useGameStore } from '@/store/useGameStore'
 import type { Weather } from '@/types'
 
@@ -11,7 +11,7 @@ function WeatherIcon({ w }: { w: Weather }) {
 }
 
 export default function StatusPanel() {
-  const { day, phase, gold, reputation, weather } = useGameStore()
+  const { day, phase, gold, reputation, weather, patrolValue, bannedStoryIds } = useGameStore()
 
   return (
     <div className="scroll-panel mb-6 py-4">
@@ -73,6 +73,37 @@ export default function StatusPanel() {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {patrolValue >= 60 ? (
+              <AlertTriangle className={`w-6 h-6 ${patrolValue >= 80 ? 'text-cinnabar animate-pulse' : 'text-gold'}`} />
+            ) : (
+              <Shield className="w-6 h-6 text-tea" />
+            )}
+            <div>
+              <div className="stat-label">巡查值</div>
+              <div className="flex items-center gap-2">
+                <div className={`stat-value font-semibold ${patrolValue >= 80 ? 'text-cinnabar' : patrolValue >= 50 ? 'text-gold' : 'text-tea'}`}>
+                  {patrolValue}
+                </div>
+                <div className="w-20 h-2 bg-paper-dark rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${
+                      patrolValue >= 80
+                        ? 'bg-gradient-to-r from-cinnabar to-red-400'
+                        : patrolValue >= 50
+                        ? 'bg-gradient-to-r from-gold to-yellow-400'
+                        : 'bg-gradient-to-r from-tea to-green-400'
+                    }`}
+                    style={{ width: `${patrolValue}%` }}
+                  />
+                </div>
+              </div>
+              {bannedStoryIds.length > 0 && (
+                <div className="text-[10px text-cinnabar mt-0.5">已禁 {bannedStoryIds.length} 篇</div>
+              )}
             </div>
           </div>
         </div>

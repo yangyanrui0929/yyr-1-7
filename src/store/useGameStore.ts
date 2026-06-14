@@ -3,17 +3,15 @@ import { persist } from 'zustand/middleware'
 import type {
   GameState,
   Weather,
-  Snack,
   Seat,
-  Customer,
   Story,
   StoryBranch,
-  InterruptionEvent,
   InterruptionOption,
   LedgerRecord,
   StoryRecord,
   ReputationHistory,
-  Renovation,
+  RiskEvent,
+  RiskOption,
 } from '@/types'
 import { STORIES } from '@/data/stories'
 import { initSnacks } from '@/data/snacks'
@@ -29,8 +27,8 @@ function randomWeather(): Weather {
   return WEATHERS[Math.floor(Math.random() * WEATHERS.length)]
 }
 
-function pickRandomStories(count: number): Story[] {
-  const pool = [...STORIES]
+function pickRandomStories(count: number, bannedIds: string[]): Story[] {
+  const pool = STORIES.filter((s) => !bannedIds.includes(s.id))
   const result: Story[] = []
   for (let i = 0; i < count && pool.length > 0; i++) {
     const idx = Math.floor(Math.random() * pool.length)
@@ -41,6 +39,64 @@ function pickRandomStories(count: number): Story[] {
 
 function uid(): string {
   return `r-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function buildRiskOptions(hasOfficial: boolean): RiskOption[] {
+  return [
+    {
+      id: 'censor',
+      text: '删改桥段',
+      description: '临时删去敏感内容，故事热度下降但风险降低',
+      patrolDelta: -12,
+      satisfactionDelta: -10,
+      goldCost: 0,
+      reputationDelta: 0,
+    },
+    {
+      id: 'cover',
+      text: '请熟客遮掩',
+      description: '请老熟客帮忙打圆场，分散巡查注意',
+      patrolDelta: -8,
+      satisfactionDelta: -3,
+      goldCost: 20,
+      reputationDelta: 0,
+    },
+    {
+      id: 'bribe',
+      text: '贿请通融',
+      description: '塞些银子给巡查人员，破财消灾',
+      patrolDelta: -20,
+      satisfactionDelta: 0,
+      goldCost: hasOfficial ? 120 : 60,
+      reputationDelta: -3,
+    },
+    {
+      id: 'ignore',
+      text: '照讲不误',
+      description: '无视风险继续说书，巡查值大幅上涨',
+      patrolDelta: hasOfficial ? 25 : 15,
+      satisfactionDelta: 5,
+      goldCost: 0,
+      reputationDelta: 2,
+    },
+  ]
+}
+
+function generateRiskEvent(
+  story: Story,
+  branch: StoryBranch,
+  hasOfficial: boolean
+): RiskEvent | null {
+  if (branch.riskTags.length === 0) return null
+  return {
+    id: `risk-${Date.now()}`,
+    storyId: story.id,
+    branchId: branch.id,
+    triggeredRiskTags: branch.riskTags,
+    basePatrolGain: branch.riskValue,
+    hasOfficialPresent: hasOfficial,
+    options: buildRiskOptions(hasOfficial),
+  }
 }
 
 const initialState: GameState = {
@@ -67,6 +123,10 @@ const initialState: GameState = {
   storyScores: {},
   isSettlement: false,
   lastSettlement: null,
+  patrolValue: 0,
+  bannedStoryIds: [],
+  currentRiskEvent: null,
+  seizedGold: 0,
 }
 
 interface GameActions {
@@ -78,6 +138,7 @@ interface GameActions {
   startPerformance: () => void
   tickPerformance: () => void
   handleInterruption: (option: InterruptionOption) => void
+  handleRiskEvent: (option: RiskOption) => void
   doSettlement: () => void
   nextDay: () => void
   resetGame: () => void
@@ -168,7 +229,7 @@ export const useGameStore = create<GameState & GameActions>()(
           if (idx >= 0) seats[idx].occupied = true
         }
 
-        const availableStories = pickRandomStories(3)
+        const availableStories = pickRandomStories(3, state.bannedStoryIds)
 
         set({
           phase: 'night',
@@ -180,6 +241,7 @@ export const useGameStore = create<GameState & GameActions>()(
           storyProgress: 0,
           performanceActive: false,
           currentInterruption: null,
+          currentRiskEvent: null,
         })
       },
 
@@ -202,6 +264,18 @@ export const useGameStore = create<GameState & GameActions>()(
         if (!state.performanceActive) return
 
         const newProgress = Math.min(100, state.storyProgress + 4)
+
+        if (!state.currentRiskEvent && !state.currentInterruption && state.currentStory && state.currentBranch) {
+          const riskTriggerChance = 0.12 + (state.currentBranch.riskValue / 100) * 0.2
+          if (state.storyProgress > 15 && state.storyProgress < 95 && Math.random() < riskTriggerChance) {
+            const hasOfficial = state.customers.some((c) => c.seatId !== null && c.type === '官员')
+            const riskEvent = generateRiskEvent(state.currentStory, state.currentBranch, hasOfficial)
+            if (riskEvent) {
+              set({ currentRiskEvent: riskEvent, storyProgress: newProgress })
+              return
+            }
+          }
+        }
 
         if (!state.currentInterruption && Math.random() < 0.18 && state.storyProgress > 10 && state.storyProgress < 90) {
           const seatedCustomers = state.customers.filter((c) => c.seatId !== null)
@@ -275,9 +349,71 @@ export const useGameStore = create<GameState & GameActions>()(
         }
       },
 
+      handleRiskEvent: (option: RiskOption) => {
+        const state = get()
+        if (!state.currentRiskEvent) return
+
+        if (state.gold < option.goldCost) return
+
+        const multiplier = state.currentRiskEvent.hasOfficialPresent ? 2 : 1
+        const patrolDelta = option.patrolDelta * (option.patrolDelta > 0 ? multiplier : 1)
+        const newPatrol = Math.max(0, Math.min(100, state.patrolValue + patrolDelta))
+
+        const customers = state.customers.map((c) => ({
+          ...c,
+          satisfaction: Math.max(0, Math.min(100, c.satisfaction + option.satisfactionDelta)),
+        }))
+
+        const newReputation = Math.max(0, Math.min(100, state.reputation + option.reputationDelta))
+
+        set({
+          currentRiskEvent: null,
+          patrolValue: newPatrol,
+          customers,
+          gold: state.gold - option.goldCost,
+          reputation: newReputation,
+        })
+
+        if (option.goldCost > 0) {
+          get().addLedgerRecord(
+            '支出',
+            option.id === 'bribe' ? '贿赂巡查' : '打点熟客',
+            option.goldCost,
+            option.text
+          )
+        }
+
+        if (option.reputationDelta !== 0) {
+          set((s) => ({
+            reputationHistory: [
+              ...s.reputationHistory,
+              {
+                day: s.day,
+                value: newReputation,
+                delta: option.reputationDelta,
+                reason: option.reputationDelta > 0 ? `冒险说书：${option.text}` : `处置风险：${option.text}`,
+              },
+            ],
+          }))
+        }
+      },
+
       doSettlement: () => {
         const state = get()
         if (!state.currentStory || !state.currentBranch) return
+
+        let endingPatrol = state.patrolValue
+        let isBanned = false
+        let seizedGold = 0
+
+        if (endingPatrol >= 80) {
+          isBanned = true
+          seizedGold = Math.min(state.gold, Math.floor(state.gold * 0.4))
+          endingPatrol = Math.max(0, endingPatrol - 40)
+        } else if (endingPatrol >= 60) {
+          seizedGold = Math.min(state.gold, Math.floor(state.gold * 0.15))
+          endingPatrol = Math.max(0, endingPatrol - 20)
+        }
 
         const result = calcSettlement(
           state.day,
@@ -290,7 +426,10 @@ export const useGameStore = create<GameState & GameActions>()(
           state.lastStoryDay,
           state.storyScores,
           state.reputation,
-          state.snacks
+          state.snacks,
+          endingPatrol,
+          isBanned,
+          seizedGold
         )
 
         const storyRecord: StoryRecord = {
@@ -311,24 +450,31 @@ export const useGameStore = create<GameState & GameActions>()(
           result.avgSatisfaction,
         ].slice(-10)
 
-        const newRep = Math.max(0, Math.min(100, state.reputation + result.reputationDelta))
+        const newBannedIds = isBanned && !state.bannedStoryIds.includes(state.currentStory.id)
+          ? [...state.bannedStoryIds, state.currentStory.id]
+          : state.bannedStoryIds
+
+        const newRep = Math.max(0, Math.min(100, state.reputation + result.reputationDelta - (isBanned ? 10 : 0)))
 
         const repHistory: ReputationHistory = {
           day: state.day,
           value: newRep,
-          delta: result.reputationDelta,
-          reason: result.reputationDelta >= 0 ? '说书好评' : '差评影响',
+          delta: result.reputationDelta - (isBanned ? 10 : 0),
+          reason: isBanned ? '故事遭禁，声名受损' : result.reputationDelta >= 0 ? '说书好评' : '差评影响',
         }
 
         set((s) => ({
           isSettlement: true,
           lastSettlement: result,
-          gold: s.gold + result.totalEarnings,
+          gold: Math.max(0, s.gold + result.totalEarnings - seizedGold),
           reputation: newRep,
           storyHistory: [...s.storyHistory, storyRecord],
           lastStoryDay: { ...s.lastStoryDay, [state.currentStory!.id]: state.day },
           storyScores: newStoryScores,
           reputationHistory: [...s.reputationHistory, repHistory],
+          patrolValue: endingPatrol,
+          bannedStoryIds: newBannedIds,
+          seizedGold,
         }))
 
         get().addLedgerRecord('收入', '基础门票', result.baseEarnings, '晚场门票')
@@ -346,6 +492,8 @@ export const useGameStore = create<GameState & GameActions>()(
           get().addLedgerRecord('收入', '茶点售卖', result.snackRevenue, '消费茶点')
         if (result.badReviewPenalty > 0)
           get().addLedgerRecord('支出', '差评损失', result.badReviewPenalty, '客人不满索赔')
+        if (seizedGold > 0)
+          get().addLedgerRecord('支出', isBanned ? '查禁扣银' : '巡查罚银', seizedGold, isBanned ? '故事遭禁，扣押账银' : '巡查罚没')
       },
 
       nextDay: () => {
@@ -360,8 +508,11 @@ export const useGameStore = create<GameState & GameActions>()(
           availableStories: [],
           performanceActive: false,
           currentInterruption: null,
+          currentRiskEvent: null,
           isSettlement: false,
+          seizedGold: 0,
           seats: s.seats.map((seat) => ({ ...seat, occupied: false })),
+          patrolValue: Math.max(0, s.patrolValue - 10),
         }))
       },
 
@@ -400,6 +551,8 @@ export const useGameStore = create<GameState & GameActions>()(
         reputationHistory: s.reputationHistory,
         lastStoryDay: s.lastStoryDay,
         storyScores: s.storyScores,
+        patrolValue: s.patrolValue,
+        bannedStoryIds: s.bannedStoryIds,
       }),
     }
   )

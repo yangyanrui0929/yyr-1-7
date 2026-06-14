@@ -2,6 +2,18 @@ export type Phase = 'day' | 'night'
 
 export type Weather = '晴' | '云' | '雨' | '雪'
 
+export type RiskTag = '讽刺官场' | '江湖恩怨' | '神怪妖言'
+
+export interface RiskOption {
+  id: 'censor' | 'cover' | 'bribe' | 'ignore'
+  text: string
+  description: string
+  patrolDelta: number
+  satisfactionDelta: number
+  goldCost: number
+  reputationDelta: number
+}
+
 export type SnackCategory = '茶' | '小吃' | '点心'
 
 export interface Snack {
@@ -44,6 +56,18 @@ export interface StoryBranch {
   content: string
   tags: string[]
   heatModifier: number
+  riskTags: RiskTag[]
+  riskValue: number
+}
+
+export interface RiskEvent {
+  id: string
+  storyId: string
+  branchId: string
+  triggeredRiskTags: RiskTag[]
+  basePatrolGain: number
+  hasOfficialPresent: boolean
+  options: RiskOption[]
 }
 
 export interface Story {
@@ -148,6 +172,10 @@ export interface GameState {
   storyScores: Record<string, number[]>
   isSettlement: boolean
   lastSettlement: SettlementResult | null
+  patrolValue: number
+  bannedStoryIds: string[]
+  currentRiskEvent: RiskEvent | null
+  seizedGold: number
 }
 
 export interface SettlementResult {
@@ -164,6 +192,9 @@ export interface SettlementResult {
   totalEarnings: number
   reputationDelta: number
   avgSatisfaction: number
+  patrolValue: number
+  isBanned: boolean
+  seizedGold: number
 }
 
 export interface CalcResult {
